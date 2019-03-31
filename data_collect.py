@@ -564,7 +564,7 @@ for city in local_json:
     eval_pids = list(dict.fromkeys(eval_pids).keys())
 
 
-    for METHOD in ["Popular"]:
+    for METHOD in ALGORITHMS:
         METRIC_DICT[city_to_test][METHOD] = {"artist": {}, "track": {}}
         if METHOD == "Random":
             eprint(Fore.CYAN, "RANDOM SELECTION", Fore.RESET)
@@ -615,7 +615,7 @@ for city in local_json:
                 recs = model.recommend(row, interaction_matrix, N=num_tracks, recalculate_user=METHOD=="ALS")
             else:
                 recs = random_recs
-            print(recs)
+            #print(recs)
             rec_list.append(recs)
             correct_list.append(correct_ids[playlist_id])
             correct_track_list.append(correct_track_ids[playlist_id])
