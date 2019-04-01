@@ -26,10 +26,14 @@ def eprint(*args, **kwargs):
 class PopularityRanking:
     def __init__(self):
         self.scores = None
+        self.theRecs = None
 
     def fit(self, train):
         self.scores = np.sum(train, axis=1)
+        self.theRecs = None
     def recommend(self, row=0, interaction_matrix=0, N=1, recalculate_user=False): #parameters just to fit interface
+        if self.theRecs is not None:
+            return self.theRecs.copy()
         to_return = []
         max = None
         for i in range(N):
@@ -41,6 +45,7 @@ class PopularityRanking:
                 max = score
             self.scores[max_index] = -1
             to_return.append((max_index, float(score)/max))
+        self.theRecs = to_return.copy()
         return to_return
 
 class Playlist:
@@ -342,6 +347,7 @@ def clicks(recs, correct, mode="artist"):
 
 
 ALGORITHMS = ["ALS", "BPR", "Random", "Popular"]
+#ALGORITHMS = ["Random", "Popular"]
 local_data_path = "/Users/akimchukdaniel/Google Drive/locals.json"
 local_artists = {}
 local_artists_found = {}
@@ -359,7 +365,8 @@ eprint("Done importing local artists.")
 
 for city in local_json:
     eprint(Back.GREEN, "RUNNING FOR CITY", city, Back.RESET)
-    METRIC_DICT[city] = {}
+    print(Back.GREEN, "RUNNING FOR CITY", city, Back.RESET)
+
     data_path = "/Users/akimchukdaniel/mpd_data/mpd.v1/data_big/"
     test_data_path = "/Users/akimchukdaniel/mpd_data/challenge.v1/challenge_set.json"
     city_to_test = city
@@ -501,6 +508,13 @@ for city in local_json:
     eprint("Local Tracks:", len(local_tracks))
     eprint()
     eprint()
+    if len(local_pids) < 10:
+        print("FEWER THAN 10 LOCAL PLAYLISTS. SKIPPING.")
+        eprint("FEWER THAN 10 LOCAL PLAYLISTS. SKIPPING.")
+        continue
+    METRIC_DICT[city] = {}
+
+
     del filenames
     local_tracks_by_city[city_to_test] = local_tracks
 
@@ -510,11 +524,23 @@ for city in local_json:
     interaction_matrix_vals = []
     # interaction_matrix = dok_matrix((num_playlists,num_tracks))
 
-    row_count = 0
-    test_indexes = []
-    r_train = dok_matrix((num_playlists, num_tracks))
+
     num_to_pick = int(len(potential_eval_pids) / 10)
-    eval_pids = np.random.choice(potential_eval_pids, num_to_pick)
+    #eval_pids = np.random.choice(potential_eval_pids, num_to_pick)
+    N = len(potential_eval_pids)
+    np.random.shuffle(potential_eval_pids)
+    eval_list = []
+    for group in range(10):
+        eval_list.append(potential_eval_pids[int((group*0.1)*N):int(((group+1)*0.1)*N)])
+
+    for METHOD in ALGORITHMS:
+        METRIC_DICT[city_to_test][METHOD] = {}
+        for type in ["artist", "track"]:
+            METRIC_DICT[city_to_test][METHOD][type] = {}
+            for metric in ["RPrec", "NDCG", "Prec@1"]:
+                METRIC_DICT[city_to_test][METHOD][type][metric+"VAL"] = []
+                METRIC_DICT[city_to_test][METHOD][type][metric+"STDERR"] = []
+
     # if city_to_test == "Boulder":
     #     eval_pids = [778762, 794490, 410260, 926844, 778146, 739622, 375363, 943589, 370638, 244967,
     #      778146]
@@ -525,233 +551,238 @@ for city in local_json:
     #  54515, 193907, 293899, 892507, 823139, 805938, 510990, 881103, 416453, 902981,
     # 497965, 841557, 371559, 156811,  75504, 391534, 509505, 384195, 319749, 642468,
     # 998061, 416453, 794321, 324031, 694307, 378391, 528356]
-    print("Evaluation Playlist IDs:",eval_pids)
-    eprint("Evaluation Playlist IDs:",eval_pids)
+    for eval_pids in eval_list:
+        print("Evaluation Playlist IDs:",eval_pids)
+        eprint("Evaluation Playlist IDs:",eval_pids)
+        row_count = 0
+        test_indexes = []
+        r_train = dok_matrix((num_playlists, num_tracks))
+        correct_ids = {}
+        correct_track_ids = {}
+        for row in tqdm.tqdm(range(len(pids))):
+            row_count += 1
+            is_eval = pids[row] in eval_pids
+            if is_eval:
+                correct_ids[pids[row]] = []
+                correct_track_ids[pids[row]] = []
+            ints = interactions[pids[row]]
+            if pids[row] in test_pids:
+                test_indexes.append(row)
+            for (track_id, count) in ints.items():
+                index = track_id_to_index[track_id]
+                # interaction_matrix.setValue(row, index, count)
+                if not is_eval or tracks[track_id].artist_uri not in local_artists[city_to_test]:
+                    interaction_matrix_rows.append(row)
+                    interaction_matrix_cols.append(index)
+                    interaction_matrix_vals.append(count)
+                if not is_eval:
+                    r_train[row, index] = count
+                elif tracks[track_id].artist_uri in local_artists[city_to_test]:
+                    correct_ids[pids[row]].append(tracks[track_id].artist_uri)
+                    correct_track_ids[pids[row]].append(tracks[track_id].track_uri)
+                # interaction_matrix[row,index] = count
+            # for playlist_track in playlist.tracks:
+            #    track_uri = playlist_track.track.track_uri
+            #    col = track_id_to_index[track_uri]
+            #    interaction_matrix[row,col] = 1
 
-    correct_ids = {}
-    correct_track_ids = {}
-    for row in tqdm.tqdm(range(len(pids))):
-        row_count += 1
-        is_eval = pids[row] in eval_pids
-        if is_eval:
-            correct_ids[pids[row]] = []
-            correct_track_ids[pids[row]] = []
-        ints = interactions[pids[row]]
-        if pids[row] in test_pids:
-            test_indexes.append(row)
-        for (track_id, count) in ints.items():
-            index = track_id_to_index[track_id]
-            # interaction_matrix.setValue(row, index, count)
-            if not is_eval or tracks[track_id].artist_uri not in local_artists[city_to_test]:
-                interaction_matrix_rows.append(row)
-                interaction_matrix_cols.append(index)
-                interaction_matrix_vals.append(count)
-            if not is_eval:
-                r_train[row, index] = count
-            elif tracks[track_id].artist_uri in local_artists[city_to_test]:
-                correct_ids[pids[row]].append(tracks[track_id].artist_uri)
-                correct_track_ids[pids[row]].append(tracks[track_id].track_uri)
-            # interaction_matrix[row,index] = count
-        # for playlist_track in playlist.tracks:
-        #    track_uri = playlist_track.track.track_uri
-        #    col = track_id_to_index[track_uri]
-        #    interaction_matrix[row,col] = 1
-
-    del interactions
-    interaction_matrix = csr_matrix((interaction_matrix_vals, (interaction_matrix_rows, interaction_matrix_cols)),
-                                    shape=(num_playlists, num_tracks))
-    eprint("Built interaction matrix for", row_count, "playlists.")
-    eval_pids = list(dict.fromkeys(eval_pids).keys())
+        #del interactions
+        interaction_matrix = csr_matrix((interaction_matrix_vals, (interaction_matrix_rows, interaction_matrix_cols)),
+                                        shape=(num_playlists, num_tracks))
+        eprint("Built interaction matrix for", row_count, "playlists.")
+        eval_pids = list(dict.fromkeys(eval_pids).keys())
 
 
-    for METHOD in ALGORITHMS:
-        METRIC_DICT[city_to_test][METHOD] = {"artist": {}, "track": {}}
-        if METHOD == "Random":
-            eprint(Fore.CYAN, "RANDOM SELECTION", Fore.RESET)
-        else:
-            if METHOD == "ALS":
-                eprint(Fore.CYAN,"ALTERNATING LEAST SQUARES",Fore.RESET)
-                model = implicit.als.AlternatingLeastSquares(factors=224, use_gpu=False)  ## power of 8 for gpu usage
-            elif METHOD == "BPR":
-                eprint(Fore.CYAN,"BAYESIAN PERSONALIZED RANKING",Fore.RESET)
-                model = implicit.bpr.BayesianPersonalizedRanking(factors=224, use_gpu=False)
-            elif METHOD == "Popular":
-                eprint(Fore.CYAN,"POPULARITY BASELINE",Fore.RESET)
-                model = PopularityRanking()
-
-            model.fit(r_train.T)
-        metric_list = []
-        ndcg_list = []
-        rec_list = []
-        prec_at_one_list = []
-
-        track_metric_list = []
-        track_ndcg_list = []
-
-        correct_list = []
-        correct_track_list = []
-        track_prec_at_one_list = []
-
-        playlist_id = eval_pids[0]
-        for playlist_id in eval_pids:
+        for METHOD in ALGORITHMS:
             if METHOD == "Random":
-                random_recs = []
-                for local in local_tracks.keys():
-                    random_recs.append((track_id_to_index[local], np.random.rand()))
-                    random_recs = sorted(random_recs, key=lambda x: x[1])
-
-            playlist_metrics_x = []
-            track_playlist_metrics_x = []
-            playlist_metrics_actual = []
-            track_playlist_metrics_actual = []
-            remaining_artists = list(local_artists[city_to_test].keys()).copy()
-            ndcg = []
-            track_ndcg = []
-            #print("pid:", playlist_id)
-            row = pids.index(playlist_id)
-            # print(row)
-            # print(local_artists["Nashville"])
-            if METHOD != "Random":
-                recs = model.recommend(row, interaction_matrix, N=num_tracks, recalculate_user=METHOD=="ALS")
+                eprint(Fore.CYAN, "RANDOM SELECTION", Fore.RESET)
             else:
-                recs = random_recs
-            #print(recs)
-            rec_list.append(recs)
-            correct_list.append(correct_ids[playlist_id])
-            correct_track_list.append(correct_track_ids[playlist_id])
-            interactions = interaction_matrix[row]
-            #print("IN PLAYLIST")
-            # for interaction in interactions.nonzero()[1]:
-            #     track = tracks[track_ids[interaction]]
+                if METHOD == "ALS":
+                    eprint(Fore.CYAN,"ALTERNATING LEAST SQUARES",Fore.RESET)
+                    model = implicit.als.AlternatingLeastSquares(factors=224, use_gpu=False)  ## power of 8 for gpu usage
+                elif METHOD == "BPR":
+                    eprint(Fore.CYAN,"BAYESIAN PERSONALIZED RANKING",Fore.RESET)
+                    model = implicit.bpr.BayesianPersonalizedRanking(factors=224, use_gpu=False)
+                elif METHOD == "Popular":
+                    eprint(Fore.CYAN,"POPULARITY BASELINE",Fore.RESET)
+                    model = PopularityRanking()
 
-            #print("\nRECOMMENDS")
-            count = 1
+                model.fit(r_train.T)
+            metric_list = []
+            ndcg_list = []
+            rec_list = []
+            prec_at_one_list = []
 
-            track_count = 1
-            #print(correct_track_ids[playlist_id])
-            is_first = True
-            for rec, score in recs:
-                track = tracks[track_ids[rec]]
-                if track.artist_uri in local_artists[city_to_test]:
-                    track_playlist_metrics_x.append(score)
-                    if track.track_uri in correct_track_ids[playlist_id]:
-                        if is_first:
-                            track_prec_at_one_list.append(1)
-                        track_ndcg.append(1)
-                        escape = Fore.GREEN
-                        track_playlist_metrics_actual.append(1)
-                    else:
-                        if is_first:
-                            track_prec_at_one_list.append(0)
-                        track_ndcg.append(0)
-                        track_playlist_metrics_actual.append(0)
-                        if track.artist_uri in correct_ids[playlist_id]:
-                            escape = Fore.YELLOW
+            track_metric_list = []
+            track_ndcg_list = []
+
+            correct_list = []
+            correct_track_list = []
+            track_prec_at_one_list = []
+
+            playlist_id = eval_pids[0]
+            for playlist_id in eval_pids:
+                if METHOD == "Random":
+                    random_recs = []
+                    for local in local_tracks.keys():
+                        random_recs.append((track_id_to_index[local], np.random.rand()))
+                        random_recs = sorted(random_recs, key=lambda x: x[1])
+
+                playlist_metrics_x = []
+                track_playlist_metrics_x = []
+                playlist_metrics_actual = []
+                track_playlist_metrics_actual = []
+                remaining_artists = list(local_artists[city_to_test].keys()).copy()
+                ndcg = []
+                track_ndcg = []
+                #print("pid:", playlist_id)
+                row = pids.index(playlist_id)
+                # print(row)
+                # print(local_artists["Nashville"])
+                if METHOD != "Random":
+                    recs = model.recommend(row, interaction_matrix, N=num_tracks, recalculate_user=METHOD=="ALS")
+                else:
+                    recs = random_recs
+                #print(recs)
+                rec_list.append(recs)
+                correct_list.append(correct_ids[playlist_id])
+                correct_track_list.append(correct_track_ids[playlist_id])
+                #interactions = interaction_matrix[row]
+                #print("IN PLAYLIST")
+                # for interaction in interactions.nonzero()[1]:
+                #     track = tracks[track_ids[interaction]]
+
+                #print("\nRECOMMENDS")
+                count = 1
+
+                track_count = 1
+                #print(correct_track_ids[playlist_id])
+                is_first = True
+                for rec, score in recs:
+                    track = tracks[track_ids[rec]]
+                    if track.artist_uri in local_artists[city_to_test]:
+                        track_playlist_metrics_x.append(score)
+                        if track.track_uri in correct_track_ids[playlist_id]:
+                            if is_first:
+                                track_prec_at_one_list.append(1)
+                            track_ndcg.append(1)
+                            escape = Fore.GREEN
+                            track_playlist_metrics_actual.append(1)
                         else:
-                            escape = Fore.RED
-                    track_count += 1
-                    #print(escape, track.track_uri,track.track_name, "by", track.artist_name, "score:", score, "AT POSITION:", count,Fore.RESET)
+                            if is_first:
+                                track_prec_at_one_list.append(0)
+                            track_ndcg.append(0)
+                            track_playlist_metrics_actual.append(0)
+                            if track.artist_uri in correct_ids[playlist_id]:
+                                escape = Fore.YELLOW
+                            else:
+                                escape = Fore.RED
+                        track_count += 1
+                        #print(escape, track.track_uri,track.track_name, "by", track.artist_name, "score:", score, "AT POSITION:", count,Fore.RESET)
 
 
 
 
-                if track.artist_uri in remaining_artists:
-                    playlist_metrics_x.append(score)
-                    if track.artist_uri in correct_ids[playlist_id]:
-                        if is_first:
-                            prec_at_one_list.append(1)
-                            is_first=False
-                        playlist_metrics_actual.append(1)
-                        escape = Back.GREEN
-                        ndcg.append(1)
-                    else:
-                        if is_first:
-                            prec_at_one_list.append(0)
-                            is_first=False
-                        playlist_metrics_actual.append(0)
-                        escape = Back.RED
-                        ndcg.append(0)
-                    #print(escape, track.track_name, "by", track.artist_name, "score:", score, "AT POSITION:", count)
-                    remaining_artists.remove(track.artist_uri)
-                    count += 1
-            #print(Style.RESET_ALL + "\n\n\n")
-            metrics = (playlist_metrics_x, playlist_metrics_actual)
-            metric_list.append(metrics)
-            ndcg_list.append(ndcg)
+                    if track.artist_uri in remaining_artists:
+                        playlist_metrics_x.append(score)
+                        if track.artist_uri in correct_ids[playlist_id]:
+                            if is_first:
+                                prec_at_one_list.append(1)
+                                is_first=False
+                            playlist_metrics_actual.append(1)
+                            escape = Back.GREEN
+                            ndcg.append(1)
+                        else:
+                            if is_first:
+                                prec_at_one_list.append(0)
+                                is_first=False
+                            playlist_metrics_actual.append(0)
+                            escape = Back.RED
+                            ndcg.append(0)
+                        #print(escape, track.track_name, "by", track.artist_name, "score:", score, "AT POSITION:", count)
+                        remaining_artists.remove(track.artist_uri)
+                        count += 1
+                #print(Style.RESET_ALL + "\n\n\n")
+                metrics = (playlist_metrics_x, playlist_metrics_actual)
+                metric_list.append(metrics)
+                ndcg_list.append(ndcg)
 
-            track_metrics = (track_playlist_metrics_x, track_playlist_metrics_actual)
-            track_metric_list.append(track_metrics)
-            track_ndcg_list.append(track_ndcg)
+                track_metrics = (track_playlist_metrics_x, track_playlist_metrics_actual)
+                track_metric_list.append(track_metrics)
+                track_ndcg_list.append(track_ndcg)
 
-        #ARTIST LEVEL
-        auc_list = []
-        r_prec_list = []
-        ndcg_metric_list = []
-        click_list = []
+            #ARTIST LEVEL
+            auc_list = []
+            r_prec_list = []
+            ndcg_metric_list = []
+            click_list = []
 
-        for i in tqdm.tqdm(range(len(rec_list))):
-            #auc = skmet.roc_auc_score(metric_list[i][1], metric_list[i][0])
-            r_prec = r_precision(rec_list[i], correct_list[i])
-            ndcg = ndcg_full(ndcg_list[i])
-            #click_count = clicks(rec_list[i], correct_list[i])
+            for i in tqdm.tqdm(range(len(rec_list))):
+                #auc = skmet.roc_auc_score(metric_list[i][1], metric_list[i][0])
+                r_prec = r_precision(rec_list[i], correct_list[i])
+                ndcg = ndcg_full(ndcg_list[i])
+                #click_count = clicks(rec_list[i], correct_list[i])
 
-            #auc_list.append(auc)
-            r_prec_list.append(r_prec)
-            ndcg_metric_list.append(ndcg)
-            #click_list.append(click_count)
+                #auc_list.append(auc)
+                r_prec_list.append(r_prec)
+                ndcg_metric_list.append(ndcg)
+                #click_list.append(click_count)
 
-        eprint(Fore.RED, "ARTIST LEVEL", Fore.RESET)
-        #eprint("AVERAGE AUC:", np.mean(auc_list),"STDERR:",scipy.stats.sem(auc_list), "STD:",np.std(auc_list))
-        eprint("AVERAGE R_PRECISION:", np.mean(r_prec_list),"STDERR:",scipy.stats.sem(r_prec_list), "STD:",np.std(r_prec_list))
-        eprint("AVERAGE NDCG:", np.mean(ndcg_metric_list),"STDERR:",scipy.stats.sem(ndcg_metric_list), "STD:",np.std(ndcg_metric_list))
-        eprint("AVERAGE PREC@1:", np.mean(prec_at_one_list),"STDERR:",scipy.stats.sem(prec_at_one_list),"STD",np.std(prec_at_one_list))
-        #eprint("AVERAGE CLICKS:", np.mean(click_list),"STDERR:",scipy.stats.sem(click_list), "STD:",np.std(click_list))
-        METRIC_DICT[city_to_test][METHOD]["artist"]["RPrec"] = str("{:10.3f}".format(np.mean(r_prec_list))) + " (" + str("{:10.3f}".format(scipy.stats.sem(r_prec_list))) + ")"
-        METRIC_DICT[city_to_test][METHOD]["artist"]["NDCG"] = str("{:10.3f}".format(np.mean(ndcg_metric_list))) + " (" + str("{:10.3f}".format(scipy.stats.sem(ndcg_metric_list))) + ")"
-        METRIC_DICT[city_to_test][METHOD]["artist"]["Prec@1"] = str("{:10.3f}".format(np.mean(prec_at_one_list))) + " (" + str("{:10.3f}".format(scipy.stats.sem(prec_at_one_list))) + ")"
+            eprint(Fore.RED, "ARTIST LEVEL", Fore.RESET)
+            #eprint("AVERAGE AUC:", np.mean(auc_list),"STDERR:",scipy.stats.sem(auc_list), "STD:",np.std(auc_list))
+            eprint("AVERAGE R_PRECISION:", np.mean(r_prec_list),"STDERR:",scipy.stats.sem(r_prec_list), "STD:",np.std(r_prec_list))
+            eprint("AVERAGE NDCG:", np.mean(ndcg_metric_list),"STDERR:",scipy.stats.sem(ndcg_metric_list), "STD:",np.std(ndcg_metric_list))
+            eprint("AVERAGE PREC@1:", np.mean(prec_at_one_list),"STDERR:",scipy.stats.sem(prec_at_one_list),"STD",np.std(prec_at_one_list))
+            #eprint("AVERAGE CLICKS:", np.mean(click_list),"STDERR:",scipy.stats.sem(click_list), "STD:",np.std(click_list))
+            METRIC_DICT[city_to_test][METHOD]["artist"]["RPrecSTDERR"].append(scipy.stats.sem(r_prec_list))
+            METRIC_DICT[city_to_test][METHOD]["artist"]["NDCGSTDERR"].append(scipy.stats.sem(ndcg_metric_list))
+            METRIC_DICT[city_to_test][METHOD]["artist"]["Prec@1STDERR"].append(scipy.stats.sem(prec_at_one_list))
 
-        METRIC_DICT[city_to_test][METHOD]["artist"]["RPrecVAL"] = np.mean(r_prec_list)
-        METRIC_DICT[city_to_test][METHOD]["artist"]["NDCGVAL"] = np.mean(ndcg_metric_list)
-        METRIC_DICT[city_to_test][METHOD]["artist"]["Prec@1VAL"] = np.mean(prec_at_one_list)
+            METRIC_DICT[city_to_test][METHOD]["artist"]["RPrecVAL"].append(np.mean(r_prec_list))
+            METRIC_DICT[city_to_test][METHOD]["artist"]["NDCGVAL"].append(np.mean(ndcg_metric_list))
+            METRIC_DICT[city_to_test][METHOD]["artist"]["Prec@1VAL"].append(np.mean(prec_at_one_list))
 
-        #TRACK LEVEL
-        auc_list = []
-        r_prec_list = []
-        ndcg_metric_list = []
-        click_list = []
+            #TRACK LEVEL
+            auc_list = []
+            r_prec_list = []
+            ndcg_metric_list = []
+            click_list = []
 
-        for i in tqdm.tqdm(range(len(rec_list))):
-            #auc = skmet.roc_auc_score(track_metric_list[i][1], track_metric_list[i][0])
-            r_prec = r_precision(rec_list[i], correct_track_list[i], mode="track")
-            ndcg = ndcg_full(track_ndcg_list[i])
-            #click_count = clicks(rec_list[i], correct_track_list[i], mode="track")
+            for i in tqdm.tqdm(range(len(rec_list))):
+                #auc = skmet.roc_auc_score(track_metric_list[i][1], track_metric_list[i][0])
+                r_prec = r_precision(rec_list[i], correct_track_list[i], mode="track")
+                ndcg = ndcg_full(track_ndcg_list[i])
+                #click_count = clicks(rec_list[i], correct_track_list[i], mode="track")
 
-            #auc_list.append(auc)
-            r_prec_list.append(r_prec)
-            ndcg_metric_list.append(ndcg)
-            #click_list.append(click_count)
-        eprint(Fore.RED, "TRACK LEVEL", Fore.RESET)
-        # eprint("AVERAGE AUC:", np.mean(auc_list), "STDERR:", scipy.stats.sem(auc_list), "STD:", np.std(auc_list))
-        eprint("AVERAGE R_PRECISION:", np.mean(r_prec_list), "STDERR:", scipy.stats.sem(r_prec_list), "STD:",
-              np.std(r_prec_list))
-        eprint("AVERAGE NDCG:", np.mean(ndcg_metric_list), "STDERR:", scipy.stats.sem(ndcg_metric_list), "STD:",
-              np.std(ndcg_metric_list))
-        eprint("AVERAGE PREC@1:", np.mean(track_prec_at_one_list),"STDERR:",scipy.stats.sem(track_prec_at_one_list),"STD",np.std(track_prec_at_one_list))
+                #auc_list.append(auc)
+                r_prec_list.append(r_prec)
+                ndcg_metric_list.append(ndcg)
+                #click_list.append(click_count)
+            eprint(Fore.RED, "TRACK LEVEL", Fore.RESET)
+            # eprint("AVERAGE AUC:", np.mean(auc_list), "STDERR:", scipy.stats.sem(auc_list), "STD:", np.std(auc_list))
+            eprint("AVERAGE R_PRECISION:", np.mean(r_prec_list), "STDERR:", scipy.stats.sem(r_prec_list), "STD:",
+                  np.std(r_prec_list))
+            eprint("AVERAGE NDCG:", np.mean(ndcg_metric_list), "STDERR:", scipy.stats.sem(ndcg_metric_list), "STD:",
+                  np.std(ndcg_metric_list))
+            eprint("AVERAGE PREC@1:", np.mean(track_prec_at_one_list),"STDERR:",scipy.stats.sem(track_prec_at_one_list),"STD",np.std(track_prec_at_one_list))
 
-        # eprint("AVERAGE CLICKS:", np.mean(click_list), "STDERR:", scipy.stats.sem(click_list), "STD:",
-        #       np.std(click_list))
-        METRIC_DICT[city_to_test][METHOD]["track"]["RPrec"] = str(
-            "{:10.3f}".format(np.mean(r_prec_list))) + " (" + str("{:10.3f}".format(scipy.stats.sem(r_prec_list))) + ")"
-        METRIC_DICT[city_to_test][METHOD]["track"]["NDCG"] = str(
-            "{:10.3f}".format(np.mean(ndcg_metric_list))) + " (" + str(
-            "{:10.3f}".format(scipy.stats.sem(ndcg_metric_list))) + ")"
-        METRIC_DICT[city_to_test][METHOD]["track"]["Prec@1"] = str(
-            "{:10.3f}".format(np.mean(track_prec_at_one_list))) + " (" + str(
-            "{:10.3f}".format(scipy.stats.sem(track_prec_at_one_list))) + ")"
+            # eprint("AVERAGE CLICKS:", np.mean(click_list), "STDERR:", scipy.stats.sem(click_list), "STD:",
+            #       np.std(click_list))
+            METRIC_DICT[city_to_test][METHOD]["track"]["RPrecSTDERR"].append(scipy.stats.sem(r_prec_list))
+            METRIC_DICT[city_to_test][METHOD]["track"]["NDCGSTDERR"].append(scipy.stats.sem(ndcg_metric_list))
+            METRIC_DICT[city_to_test][METHOD]["track"]["Prec@1STDERR"].append(scipy.stats.sem(track_prec_at_one_list))
 
-        METRIC_DICT[city_to_test][METHOD]["track"]["RPrecVAL"] = np.mean(r_prec_list)
-        METRIC_DICT[city_to_test][METHOD]["track"]["NDCGVAL"] = np.mean(ndcg_metric_list)
-        METRIC_DICT[city_to_test][METHOD]["track"]["Prec@1VAL"] = np.mean(track_prec_at_one_list)
+            METRIC_DICT[city_to_test][METHOD]["track"]["RPrecVAL"].append(np.mean(r_prec_list))
+            METRIC_DICT[city_to_test][METHOD]["track"]["NDCGVAL"].append(np.mean(ndcg_metric_list))
+            METRIC_DICT[city_to_test][METHOD]["track"]["Prec@1VAL"].append(np.mean(track_prec_at_one_list))
+    for type in ["track", "artist"]:
+        for METHOD in ALGORITHMS:
+            for metric in ["RPrec", "NDCG", "Prec@1"]:
+                METRIC_DICT[city_to_test][METHOD][type][metric+"STDERR"] = np.mean(METRIC_DICT[city_to_test][METHOD][type][metric+"STDERR"])
+                METRIC_DICT[city_to_test][METHOD][type][metric+"VAL"] = np.mean(METRIC_DICT[city_to_test][METHOD][type][metric+"VAL"])
+                METRIC_DICT[city_to_test][METHOD][type][metric] = str("{:10.3f}".format(METRIC_DICT[city_to_test][METHOD][type][metric+"VAL"])) + \
+                                                                   " (" + str("{:10.3f}".format(METRIC_DICT[city_to_test][METHOD][type][metric+"STDERR"])) + ")"
+
 output_latex()
 
 
