@@ -530,8 +530,9 @@ for city in local_json:
     N = len(potential_eval_pids)
     np.random.shuffle(potential_eval_pids)
     eval_list = []
-    for group in range(10):
-        eval_list.append(potential_eval_pids[int((group*0.1)*N):int(((group+1)*0.1)*N)])
+    fold = 5
+    for group in range(fold):
+        eval_list.append(potential_eval_pids[int((group*(1.0/fold))*N):int(((group+1)*(1.0/fold))*N)])
 
     for METHOD in ALGORITHMS:
         METRIC_DICT[city_to_test][METHOD] = {}
