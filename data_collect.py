@@ -36,7 +36,7 @@ class PopularityRanking:
             return self.theRecs.copy()
         to_return = []
         max = None
-        for i in range(N):
+        for i in tqdm.tqdm(range(N)):
             max_index = np.argmax(self.scores)
             score = self.scores[max_index,0]
             if score == -1:
@@ -348,7 +348,7 @@ def clicks(recs, correct, mode="artist"):
 
 ALGORITHMS = ["ALS", "BPR", "Random", "Popular"]
 #ALGORITHMS = ["Random", "Popular"]
-local_data_path = "/Users/akimchukdaniel/Google Drive/locals.json"
+local_data_path = "/Users/akimchukdaniel/Google Drive/justbrooklyn.json"
 local_artists = {}
 local_artists_found = {}
 local_tracks_by_city = {}
