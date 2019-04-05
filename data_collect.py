@@ -346,7 +346,8 @@ def clicks(recs, correct, mode="artist"):
             i2 += 1
 
 
-ALGORITHMS = ["ALS", "BPR", "Random", "Popular"]
+ALGORITHMS = ["ALS", "BPR", "Item-Item", "Random", "Popular"]
+#ALGORITHMS=["Item-Item"]
 #ALGORITHMS = ["Random", "Popular"]
 local_data_path = "/Users/akimchukdaniel/Google Drive/justbrooklyn.json"
 local_artists = {}
@@ -589,7 +590,7 @@ for city in local_json:
 
         #del interactions
         interaction_matrix = csr_matrix((interaction_matrix_vals, (interaction_matrix_rows, interaction_matrix_cols)),
-                                        shape=(num_playlists, num_tracks))
+                                        shape=(num_playlists, num_tracks), dtype=np.dtype(np.float32))
         eprint("Built interaction matrix for", row_count, "playlists.")
         eval_pids = list(dict.fromkeys(eval_pids).keys())
 
@@ -607,8 +608,11 @@ for city in local_json:
                 elif METHOD == "Popular":
                     eprint(Fore.CYAN,"POPULARITY BASELINE",Fore.RESET)
                     model = PopularityRanking()
+                elif METHOD == "Item-Item":
+                    eprint(Fore.CYAN,"ITEM TO ITEM",Fore.RESET)
+                    model = implicit.nearest_neighbours.BM25Recommender()
 
-                model.fit(r_train.T)
+                model.fit(r_train.T, show_progress=True)
             metric_list = []
             ndcg_list = []
             rec_list = []
@@ -641,7 +645,7 @@ for city in local_json:
                 # print(row)
                 # print(local_artists["Nashville"])
                 if METHOD != "Random":
-                    recs = model.recommend(row, interaction_matrix, N=num_tracks, recalculate_user=METHOD=="ALS")
+                    recs = model.recommend(row, interaction_matrix, N=num_tracks, recalculate_user=(METHOD=="ALS" or METHOD=="Item-Item"))
                 else:
                     recs = random_recs
                 #print(recs)
