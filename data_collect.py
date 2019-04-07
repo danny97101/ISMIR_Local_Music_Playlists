@@ -349,7 +349,7 @@ def clicks(recs, correct, mode="artist"):
 ALGORITHMS = ["ALS", "BPR", "Item-Item", "Random", "Popular"]
 #ALGORITHMS=["Item-Item"]
 #ALGORITHMS = ["Random", "Popular"]
-local_data_path = "/Users/akimchukdaniel/Google Drive/justbrooklyn.json"
+local_data_path = "/Users/akimchukdaniel/Google Drive/locals copy.json"
 local_artists = {}
 local_artists_found = {}
 local_tracks_by_city = {}
@@ -611,8 +611,10 @@ for city in local_json:
                 elif METHOD == "Item-Item":
                     eprint(Fore.CYAN,"ITEM TO ITEM",Fore.RESET)
                     model = implicit.nearest_neighbours.BM25Recommender()
-
-                model.fit(r_train.T, show_progress=True)
+                if METHOD == "Item-Item":
+                    model.fit(r_train.T, show_progress=True)
+                else:
+                    model.fit(r_train.T)
             metric_list = []
             ndcg_list = []
             rec_list = []
