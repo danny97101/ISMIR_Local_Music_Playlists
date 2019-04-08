@@ -346,7 +346,7 @@ def clicks(recs, correct, mode="artist"):
             i2 += 1
 
 
-ALGORITHMS = ["ALS", "BPR", "Item-Item", "Random", "Popular"]
+ALGORITHMS = ["Item-Item", "ALS", "BPR", "Random", "Popular"]
 #ALGORITHMS=["Item-Item"]
 #ALGORITHMS = ["Random", "Popular"]
 local_data_path = "/Users/akimchukdaniel/Google Drive/locals copy.json"
@@ -628,7 +628,7 @@ for city in local_json:
             track_prec_at_one_list = []
 
             playlist_id = eval_pids[0]
-            for playlist_id in eval_pids:
+            for playlist_id in tqdm.tqdm(eval_pids):
                 if METHOD == "Random":
                     random_recs = []
                     for local in local_tracks.keys():
@@ -743,11 +743,16 @@ for city in local_json:
             #eprint("AVERAGE CLICKS:", np.mean(click_list),"STDERR:",scipy.stats.sem(click_list), "STD:",np.std(click_list))
             METRIC_DICT[city_to_test][METHOD]["artist"]["RPrecSTDERR"].append(scipy.stats.sem(r_prec_list))
             METRIC_DICT[city_to_test][METHOD]["artist"]["NDCGSTDERR"].append(scipy.stats.sem(ndcg_metric_list))
-            METRIC_DICT[city_to_test][METHOD]["artist"]["Prec@1STDERR"].append(scipy.stats.sem(prec_at_one_list))
+            if len(prec_at_one_list) > 0:
+                METRIC_DICT[city_to_test][METHOD]["artist"]["Prec@1STDERR"].append(scipy.stats.sem(prec_at_one_list))
+                METRIC_DICT[city_to_test][METHOD]["artist"]["Prec@1VAL"].append(np.mean(prec_at_one_list))
+            else:
+                METRIC_DICT[city_to_test][METHOD]["artist"]["Prec@1STDERR"].append(0)
+                METRIC_DICT[city_to_test][METHOD]["artist"]["Prec@1VAL"].append(0)
+
 
             METRIC_DICT[city_to_test][METHOD]["artist"]["RPrecVAL"].append(np.mean(r_prec_list))
             METRIC_DICT[city_to_test][METHOD]["artist"]["NDCGVAL"].append(np.mean(ndcg_metric_list))
-            METRIC_DICT[city_to_test][METHOD]["artist"]["Prec@1VAL"].append(np.mean(prec_at_one_list))
 
             #TRACK LEVEL
             auc_list = []
@@ -777,15 +782,21 @@ for city in local_json:
             #       np.std(click_list))
             METRIC_DICT[city_to_test][METHOD]["track"]["RPrecSTDERR"].append(scipy.stats.sem(r_prec_list))
             METRIC_DICT[city_to_test][METHOD]["track"]["NDCGSTDERR"].append(scipy.stats.sem(ndcg_metric_list))
-            METRIC_DICT[city_to_test][METHOD]["track"]["Prec@1STDERR"].append(scipy.stats.sem(track_prec_at_one_list))
 
             METRIC_DICT[city_to_test][METHOD]["track"]["RPrecVAL"].append(np.mean(r_prec_list))
             METRIC_DICT[city_to_test][METHOD]["track"]["NDCGVAL"].append(np.mean(ndcg_metric_list))
-            METRIC_DICT[city_to_test][METHOD]["track"]["Prec@1VAL"].append(np.mean(track_prec_at_one_list))
+
+            if len(track_prec_at_one_list) > 0:
+                METRIC_DICT[city_to_test][METHOD]["track"]["Prec@1STDERR"].append(scipy.stats.sem(track_prec_at_one_list))
+                METRIC_DICT[city_to_test][METHOD]["track"]["Prec@1VAL"].append(np.mean(track_prec_at_one_list))
+            else:
+                METRIC_DICT[city_to_test][METHOD]["track"]["Prec@1STDERR"].append(0)
+                METRIC_DICT[city_to_test][METHOD]["track"]["Prec@1VAL"].append(0)
     for type in ["track", "artist"]:
         for METHOD in ALGORITHMS:
             for metric in ["RPrec", "NDCG", "Prec@1"]:
-                METRIC_DICT[city_to_test][METHOD][type][metric+"STDERR"] = np.mean(METRIC_DICT[city_to_test][METHOD][type][metric+"STDERR"])
+                #METRIC_DICT[city_to_test][METHOD][type][metric+"STDERR"] = np.mean(METRIC_DICT[city_to_test][METHOD][type][metric+"STDERR"])
+                METRIC_DICT[city_to_test][METHOD][type][metric+"STDERR"] = scipy.stats.sem(METRIC_DICT[city_to_test][METHOD][type][metric+"VAL"])
                 METRIC_DICT[city_to_test][METHOD][type][metric+"VAL"] = np.mean(METRIC_DICT[city_to_test][METHOD][type][metric+"VAL"])
                 METRIC_DICT[city_to_test][METHOD][type][metric] = str("{:10.3f}".format(METRIC_DICT[city_to_test][METHOD][type][metric+"VAL"])) + \
                                                                    " (" + str("{:10.3f}".format(METRIC_DICT[city_to_test][METHOD][type][metric+"STDERR"])) + ")"
